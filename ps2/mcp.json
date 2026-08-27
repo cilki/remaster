@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "pcsx2": {
+      "command": "pcsx2-mcp"
+    }
+  }
+}
