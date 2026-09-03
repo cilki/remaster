@@ -42,15 +42,21 @@ COPY SKILL.md mipsel-ps2-elf.json /root/.claude/skills/remaster-ps2/
 # PCSX2 (Qt) supports Wayland natively; select it explicitly since Qt's
 # auto-detection has no session info inside the container and would fall
 # back to X11. The host Wayland socket is mounted at the fixed path
-# /tmp/runtime/wayland-0 (see README), so these must not be overridden
-# with host values at run time. PCSX2 is launched inside a nested cage
-# compositor (a regular window on the host, socket wayland-1 in here) so
-# the agent can screenshot it with grim and send keys with wtype.
+# /tmp/runtime/wayland-0 (see README). PCSX2 is launched inside a nested
+# cage compositor (a regular window on the host) so the agent can
+# screenshot it with grim and send keys with wtype.
+#
+# The default env targets cage's socket, not the host's: cage cannot bind
+# in a runtime dir that already holds the host's wayland-0, so it gets its
+# own (/tmp/cagert), where it creates its own wayland-0. With this as the
+# default, pcsx2/grim/wtype (and PINE's pcsx2.sock) all land in /tmp/cagert
+# with no per-command env. Only cage's outbound connection needs the host
+# socket, and the `cage` wrapper in shell.nix supplies it by absolute path.
 ENV QT_QPA_PLATFORM=wayland
-ENV XDG_RUNTIME_DIR=/tmp/runtime
+ENV XDG_RUNTIME_DIR=/tmp/cagert
 ENV WAYLAND_DISPLAY=wayland-0
 ENV LANG=C.UTF-8
-RUN mkdir -m 700 -p /tmp/runtime
+RUN mkdir -m 700 -p /tmp/runtime /tmp/cagert
 
 # Claude Code refuses --dangerously-skip-permissions as root unless it
 # knows it's inside a sandboxed container

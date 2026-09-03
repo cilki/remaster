@@ -1,0 +1,14 @@
+[package]
+name = "shim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+resplice-macros = "0.0.1"
+
+[lib]
+crate-type = ["rlib"]
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
