@@ -25,6 +25,30 @@ pub const unsafe fn cstr(addr: Ptr32) -> *const c_char {
     addr as *const c_char
 }
 
+/// A 32-bit pointer field in a spliced table that may reference data brought
+/// in by the shim itself. Using a real pointer (rather than [`Ptr32`]) makes
+/// rustc emit an `R_MIPS_32` relocation in the splice section, which resplice
+/// resolves by injecting the referenced section into the ELF as a new
+/// segment. Same 4-byte layout as `Ptr32` on the 32-bit target.
+#[repr(transparent)]
+pub struct Name(pub *const u8);
+
+// Safety: only ever points at immutable data baked into the ELF.
+unsafe impl Sync for Name {}
+
+impl Name {
+    /// Reference a string already in the game at a known address.
+    pub const fn addr(a: u32) -> Self {
+        Name(a as *const u8)
+    }
+
+    /// Reference a NUL-terminated byte string supplied by the shim.
+    pub const fn new(s: &'static [u8]) -> Self {
+        assert!(!s.is_empty() && s[s.len() - 1] == 0, "missing NUL");
+        Name(s.as_ptr())
+    }
+}
+
 /// Many stat fields are 8.8 fixed point: `256` == 1.0.
 pub const FIXED_ONE: u16 = 256;
 
@@ -46,8 +70,9 @@ pub const fn fixed_to_centi(v: u16) -> u32 {
 #[repr(C)]
 pub struct PartEntry {
     /// Short display name. Lives in `.sdata` for short names ("Normal",
-    /// "Sports") and in `.rodata` for longer ones ("HG Studless").
-    pub name: Ptr32,
+    /// "Sports") and in `.rodata` for longer ones ("HG Studless"); shim
+    /// splices may also point it at their own injected strings.
+    pub name: Name,
     /// Blurb shown under the name, e.g. `" Roads **** Off-Road ****"`.
     pub description: Ptr32,
     /// Price in Choro Q Coins.

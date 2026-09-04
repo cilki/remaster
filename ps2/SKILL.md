@@ -76,7 +76,7 @@ the default `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY` already target cage's socket
 wrapper that connects itself out to the host display.
 
 ```sh
-# Launch PCSX2 in the background:
+# Launch PCSX2 in the background (or use tools/launch.sh, see below):
 cage -- pcsx2-qt -batch -fullscreen /workspace/remaster.iso &
 
 # Screenshot what PCSX2 is rendering, then view the PNG with the Read tool:
@@ -119,6 +119,13 @@ Gotchas:
   `PCSX2.ini` so it never appears.
 - cage exits the moment its child exits, with no error of its own — always check
   `/root/.config/PCSX2/logs/emulog.txt` for the real cause.
+
+Prefer `/root/.claude/skills/remaster-ps2/tools/launch.sh <iso> [wait_s]` for
+(re)launching: it kills stale instances (the process is named
+`.pcsx2-qt-wrapp`, which plain `pkill pcsx2-qt` misses — and never `pkill -f` a
+pattern that appears in your own command line), clears stale cage socket locks
+and `/dev/shm/pcsx2*` (the 256M /dev/shm limit SIGBUSes overlapping PCSX2
+instances), then launches under cage and waits for it to come up.
 
 ## Reverse step
 
@@ -185,7 +192,7 @@ headers to map each section's virtual address range to its file offset
 needs a code splice or a live debugger write instead. Record which category each
 finding falls into.
 
-> Tip: pcsx2-qt doesn't respond to --help.
+> Tip: pcsx2-qt doesn't respond to --help or --version.
 
 ## Fabricate step
 
@@ -212,18 +219,36 @@ user-visible change in the `Change log` section of `/workspace/README.md`.
 
 ## Repack step
 
-Rebuild a runnable image from `/workspace/extracted`:
+Rebuild a runnable image with `remaster_iso.py`, installed alongside this skill
+(game-agnostic — finds the boot ELF via SYSTEM.CNF's BOOT2 and walks the
+ISO9660 tree itself):
 
 ```sh
-xorriso -as mkisofs -iso-level 3 -o /workspace/remaster.iso \
-    /workspace/extracted
+/root/.claude/skills/remaster-ps2/tools/remaster_iso.py \
+    "/workspace/<original>.iso" /workspace/extracted /workspace/remaster.iso
 ```
 
-Some games are sensitive to file placement (LBA) on the disc. If the rebuilt ISO
-fails to boot in the Verify step but the original does, fall back to patching
-the original image in place: for same-size file changes, locate the file's
-offset in the original ISO (pattern-search for its first bytes) and overwrite
-those bytes directly in a copy of the original image.
+Do NOT rebuild the filesystem with modern mastering tools: `xorriso -as
+mkisofs` images do not boot — the PS2 kernel's own ISO9660 walk (sectors
+16/48/18) dies with kernel TLB misses before game code even runs, i.e. the
+guest FS parser rejects xorriso's directory layout. Games are also
+layout-sensitive beyond that: they typically read assets by raw sector number
+from LBA tables baked into the boot ELF.
+
+`remaster_iso.py` works around both: it keeps the original image
+byte-for-byte, overwrites same-size file changes in place, and *appends*
+size-changed files (including a grown boot ELF) at the end of the image,
+repointing each one's ISO9660 directory record and retargeting its LBA-table
+records inside the boot ELF (located heuristically: the file's start LBA as an
+LE u32 with its 2048-block count as a u32 within ±8 bytes). A moved file with
+no LBA record just prints a warning — it's assumed to be loaded by name.
+`--test-move /PATH` relocates an unchanged file to the appended region; the
+game booting identically afterwards proves the retargeting works for it.
+
+To debug repack problems, set `CdvdVerboseReads = true` under `[EmuCore]` plus
+`EnableVerbose`/`EnableFileLogging = true` under `[Logging]` in PCSX2.ini to
+get per-sector read logs in emulog.txt, and confirm reads land on the expected
+(e.g. appended) sectors.
 
 ## Verify step
 

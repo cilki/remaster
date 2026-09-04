@@ -2,9 +2,9 @@
 
 - Extract: done
 - Reverse: done for the shop/economy/parts layer (live debugging WORKING)
-- Fabricate: pending
-- Repack: pending
-- Verify: pending
+- Fabricate: in progress (shim splice pipeline proven end-to-end)
+- Repack: done (skill's `remaster_iso.py`: in-place + append-and-retarget-LBA — see below)
+- Verify: passed for the pipeline test (boots to title with a relocated TITLE.GSL, spliced byte live in RAM)
 
 ## Game
 
@@ -92,6 +92,28 @@ the starting value 1000 (exactly one hit) and confirmed by writing 9999, which
 changed the Paint Shop's on-screen total. Lives in `.bss`, so the starting
 balance must be set by a code splice or written live.
 
+## Repack method
+
+Repacked with the skill's `remaster_iso.py` (in-place + append-and-retarget-LBA
+— see the skill's Repack step). Proven on this game: relocating an untouched
+SYS/TITLE.GSL to the appended region boots and renders the title fine, with
+CDVD reads observed at the appended sectors (`--test-move /SYS/TITLE.GSL`
+reproduces that experiment). Files with no LBA record here — loaded by name,
+so free to change size: SYSTEM.CNF, IOPRP234.IMG, \*.IRX, FONT.GSL.
+
+### The LBA table
+
+The game reads assets by raw sector number. All records live in one region of
+`.data`, VA 0x29adf4..0x29c01c (file offset 0x9bdf4), ~384 records covering
+364 of 376 files, as sub-tables of differing shapes ({lba, blocks, ptr} for
+SOUND, {name_ptr, lba, blocks} elsewhere; strides 12/16/24/28), plus a stray
+LIBSD.IRX record at VA 0x2a91a0. Records are located layout-agnostically:
+file's LBA as LE u32 with its 2048-block count as u32 within ±8 bytes.
+Files with no record are loaded by name (FONT.GSL appears unused; FONTE.GSL
+is the font actually loaded at boot).
+
 ## Change log
 
-<each Fabricate change: what, where, how to verify it in-game>
+- **Normal tire price 200 → 123** (shim `shipped.rs` TIRES[0], VA 0x2eca78) —
+  pipeline-test marker; verify in Parts Shop price list or by PINE read of
+  0x2eca78 (expect 0x7b). Revisit/revert when real Fabricate content lands.

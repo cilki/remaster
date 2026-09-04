@@ -16,39 +16,39 @@
 
 use resplice_macros::Splice;
 
-use crate::tables::{HornEntry, OptionPart, PartEntry, SimplePart};
+use crate::tables::{HornEntry, Name, OptionPart, PartEntry, SimplePart};
 
 /// Tire catalogue. `stats` are per-surface grip in 8.8 fixed point.
 ///
 /// Shipped range: `0x002eca70..0x002ecbdc` (13 x 28 bytes).
 #[Splice(begin = 0x002eca70, end = 0x002ecbdc)]
 pub static TIRES: [PartEntry; 13] = [
-    // Normal: Standard
-    PartEntry { name: 0x00333968, description: 0x002ecea8, price: 200, stats: [196, 168, 128, 168, 96, 64, 0, 0] },
+    // Normal: Standard (price dropped 200 -> 123 as a live splice-test marker)
+    PartEntry { name: Name::addr(0x00333968), description: 0x002ecea8, price: 123, stats: [196, 168, 128, 168, 96, 64, 0, 0] },
     // Sports: All-around
-    PartEntry { name: 0x00333960, description: 0x002ece80, price: 1000, stats: [240, 196, 154, 160, 96, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x00333960), description: 0x002ece80, price: 1000, stats: [240, 196, 154, 160, 96, 64, 0, 0] },
     // Semi-Racing: Road racing type
-    PartEntry { name: 0x002ece70, description: 0x002ece40, price: 2000, stats: [333, 168, 154, 140, 80, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x002ece70), description: 0x002ece40, price: 2000, stats: [333, 168, 154, 140, 80, 64, 0, 0] },
     // Racing: Medium Tread
-    PartEntry { name: 0x00333958, description: 0x002ece18, price: 5000, stats: [512, 102, 102, 100, 51, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x00333958), description: 0x002ece18, price: 5000, stats: [512, 102, 102, 100, 51, 64, 0, 0] },
     // HG Racing: Great on raceway
-    PartEntry { name: 0x002ece08, description: 0x002ecdd8, price: 10000, stats: [512, 160, 102, 128, 51, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x002ece08), description: 0x002ecdd8, price: 10000, stats: [512, 160, 102, 128, 51, 64, 0, 0] },
     // Wet: Water Durable
-    PartEntry { name: 0x00333950, description: 0x002ecda0, price: 2000, stats: [240, 196, 196, 160, 128, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x00333950), description: 0x002ecda0, price: 2000, stats: [240, 196, 196, 160, 128, 64, 0, 0] },
     // HG Wet: Super Water Durable
-    PartEntry { name: 0x00333948, description: 0x002ecd60, price: 3000, stats: [240, 196, 240, 160, 128, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x00333948), description: 0x002ecd60, price: 3000, stats: [240, 196, 240, 160, 128, 64, 0, 0] },
     // Off-Road: Off-road type
-    PartEntry { name: 0x002ecd50, description: 0x002ecd18, price: 500, stats: [196, 196, 160, 160, 128, 64, 0, 0] },
+    PartEntry { name: Name::addr(0x002ecd50), description: 0x002ecd18, price: 500, stats: [196, 196, 160, 160, 128, 64, 0, 0] },
     // HG Off-Road: Mountain ride
-    PartEntry { name: 0x002ecd08, description: 0x002eccd0, price: 3000, stats: [240, 240, 160, 180, 168, 128, 0, 0] },
+    PartEntry { name: Name::addr(0x002ecd08), description: 0x002eccd0, price: 3000, stats: [240, 240, 160, 180, 168, 128, 0, 0] },
     // Studless: Ice Durable
-    PartEntry { name: 0x002eccc0, description: 0x002ecc88, price: 1000, stats: [196, 196, 160, 168, 168, 196, 0, 0] },
+    PartEntry { name: Name::addr(0x002eccc0), description: 0x002ecc88, price: 1000, stats: [196, 196, 160, 168, 168, 196, 0, 0] },
     // HG Studless: Ice and Land Durable
-    PartEntry { name: 0x002ecc78, description: 0x002ecc38, price: 3000, stats: [240, 196, 160, 168, 196, 196, 0, 0] },
+    PartEntry { name: Name::addr(0x002ecc78), description: 0x002ecc38, price: 3000, stats: [240, 196, 160, 168, 196, 196, 0, 0] },
     // Big: Drive everywhere
-    PartEntry { name: 0x00333940, description: 0x002ecbf8, price: 5000, stats: [240, 240, 230, 210, 196, 96, 0, 1] },
+    PartEntry { name: Name::addr(0x00333940), description: 0x002ecbf8, price: 5000, stats: [240, 240, 230, 210, 196, 96, 0, 1] },
     // Devil: Unimaginable!
-    PartEntry { name: 0x00333938, description: 0x002ecbe0, price: 200000, stats: [65280, 65280, 65280, 65280, 65280, 65280, 0, 0] },
+    PartEntry { name: Name::addr(0x00333938), description: 0x002ecbe0, price: 200000, stats: [65280, 65280, 65280, 65280, 65280, 65280, 0, 0] },
 ];
 
 /// Engine / gearbox catalogue. `stats[0]` is reverse (negative), the rest are forward gears.
@@ -57,17 +57,17 @@ pub static TIRES: [PartEntry; 13] = [
 #[Splice(begin = 0x002ed328, end = 0x002ed3d0)]
 pub static ENGINES: [PartEntry; 6] = [
     // Normal: Standard
-    PartEntry { name: 0x00333968, description: 0x002ed4d0, price: 200, stats: [65441, 116, 162, 227, 318, 446, 0, 0] },
+    PartEntry { name: Name::addr(0x00333968), description: 0x002ed4d0, price: 200, stats: [65441, 116, 162, 227, 318, 446, 0, 0] },
     // Sports: Good engine,
-    PartEntry { name: 0x00333960, description: 0x002ed4a0, price: 1000, stats: [65441, 116, 182, 291, 408, 490, 0, 0] },
+    PartEntry { name: Name::addr(0x00333960), description: 0x002ed4a0, price: 1000, stats: [65441, 116, 182, 291, 408, 490, 0, 0] },
     // Power: Good engine,
-    PartEntry { name: 0x003339b8, description: 0x002ed470, price: 2000, stats: [65441, 128, 220, 276, 387, 464, 557, 0] },
+    PartEntry { name: Name::addr(0x003339b8), description: 0x002ed470, price: 2000, stats: [65441, 128, 220, 276, 387, 464, 557, 0] },
     // Speed: Good engine,
-    PartEntry { name: 0x003339b0, description: 0x002ed440, price: 4000, stats: [65441, 128, 260, 327, 458, 550, 660, 0] },
+    PartEntry { name: Name::addr(0x003339b0), description: 0x002ed440, price: 4000, stats: [65441, 128, 260, 327, 458, 550, 660, 0] },
     // Wide: Good engine,
-    PartEntry { name: 0x003339a8, description: 0x002ed408, price: 7000, stats: [65441, 144, 300, 414, 539, 647, 711, 0] },
+    PartEntry { name: Name::addr(0x003339a8), description: 0x002ed408, price: 7000, stats: [65441, 144, 300, 414, 539, 647, 711, 0] },
     // Hyper: Good engine,
-    PartEntry { name: 0x00333988, description: 0x002ed3d0, price: 10000, stats: [65441, 156, 350, 446, 550, 625, 750, 0] },
+    PartEntry { name: Name::addr(0x00333988), description: 0x002ed3d0, price: 10000, stats: [65441, 156, 350, 446, 550, 625, 750, 0] },
 ];
 
 /// Chassis catalogue. `value` is weight, so lower is better.
