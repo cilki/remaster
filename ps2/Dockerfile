@@ -78,8 +78,8 @@ ENV IS_SANDBOX=1
 # game's own /workspace/pcsx2.ini overrides (via pcsx2ini.py) on each launch.
 COPY PCSX2.base.ini /opt/remaster/PCSX2.base.ini
 RUN mkdir -p /root/.config/PCSX2/inis /root/.config/PCSX2/bios \
-    && sed '/^\s*[;#]/d' /opt/remaster/PCSX2.base.ini \
-       > /root/.config/PCSX2/inis/PCSX2.ini
+    && nix-shell /opt/remaster/shell.nix --run \
+       'pcsx2ini.py /opt/remaster/PCSX2.base.ini > /root/.config/PCSX2/inis/PCSX2.ini'
 
 # Launch claude in the foreground; the container is the permission boundary
 ENTRYPOINT ["nix-shell", "/opt/remaster/shell.nix", "--run", "claude --dangerously-skip-permissions"]

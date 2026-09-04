@@ -142,6 +142,15 @@ pub static PROPULSION: [SimplePart; 3] = [
 
 /// Bolt-on options, including Water Ski and the 50000-coin Flight Wing.
 ///
+/// Two changes here, both text; every price, mask, id and variant is exactly
+/// as shipped.
+///
+/// * The five Billboard rows are renamed after the town each one pays out in.
+///   Shipped, all five point at the same `"Billboard"` string, so the list
+///   shows five identical rows for five non-interchangeable items.
+/// * Police Light's description loses its "Has no effect." opening line, which
+///   contradicted the two lines under it that correctly call it a cosmetic.
+///
 /// Shipped range: `0x002f03e0..0x002f0494` (9 x 20 bytes).
 #[Splice(begin = 0x002f03e0, end = 0x002f0494)]
 pub static OPTIONS: [OptionPart; 9] = [
@@ -151,18 +160,18 @@ pub static OPTIONS: [OptionPart; 9] = [
     OptionPart { name: Name::addr(0x002f0690), description: Name::addr(0x002f0648), price: 3000, equip_mask: 256, part_id: 8, variant: 0, reserved: 0 },
     // Flight Wing: Fly at 190mph.
     OptionPart { name: Name::addr(0x002f0638), description: Name::addr(0x002f0610), price: 50000, equip_mask: 4, part_id: 2, variant: 0, reserved: 0 },
-    // Police Light: Has no effect.
-    OptionPart { name: Name::addr(0x002f0600), description: Name::addr(0x002f05d8), price: 1000, equip_mask: 32, part_id: 5, variant: 0, reserved: 0 },
-    // Billboard: Post it up to
-    OptionPart { name: Name::addr(0x002f05c8), description: Name::addr(0x002f0590), price: 0, equip_mask: 512, part_id: 9, variant: 0, reserved: 0 },
-    // Billboard: Post it up to
-    OptionPart { name: Name::addr(0x002f05c8), description: Name::addr(0x002f0550), price: 0, equip_mask: 512, part_id: 9, variant: 1, reserved: 0 },
-    // Billboard: Post it up to
-    OptionPart { name: Name::addr(0x002f05c8), description: Name::addr(0x002f0518), price: 0, equip_mask: 512, part_id: 9, variant: 2, reserved: 0 },
-    // Billboard: Post it up to
-    OptionPart { name: Name::addr(0x002f05c8), description: Name::addr(0x002f04d8), price: 0, equip_mask: 512, part_id: 9, variant: 3, reserved: 0 },
-    // Billboard: Post it up to
-    OptionPart { name: Name::addr(0x002f05c8), description: Name::addr(0x002f0498), price: 0, equip_mask: 512, part_id: 9, variant: 4, reserved: 0 },
+    // Police Light: cosmetic, and now says so without talking itself down.
+    OptionPart { name: Name::addr(0x002f0600), description: Name::new(strings::POLICE_LIGHT), price: 1000, equip_mask: 32, part_id: 5, variant: 0, reserved: 0 },
+    // Peach Ad: a cafe in Peach Town
+    OptionPart { name: Name::new(strings::BILLBOARD_PEACH), description: Name::addr(0x002f0590), price: 0, equip_mask: 512, part_id: 9, variant: 0, reserved: 0 },
+    // Fuji Ad: a noodle cafe in Fuji City
+    OptionPart { name: Name::new(strings::BILLBOARD_FUJI), description: Name::addr(0x002f0550), price: 0, equip_mask: 512, part_id: 9, variant: 1, reserved: 0 },
+    // Sandpolis Ad: a bakery in Sandpolis
+    OptionPart { name: Name::new(strings::BILLBOARD_SANDPOLIS), description: Name::addr(0x002f0518), price: 0, equip_mask: 512, part_id: 9, variant: 2, reserved: 0 },
+    // Mountain Ad: a wool shop in White Mountain
+    OptionPart { name: Name::new(strings::BILLBOARD_MOUNTAIN), description: Name::addr(0x002f04d8), price: 0, equip_mask: 512, part_id: 9, variant: 3, reserved: 0 },
+    // Papaya Ad: a coconut shop on Papaya Island
+    OptionPart { name: Name::new(strings::BILLBOARD_PAPAYA), description: Name::addr(0x002f0498), price: 0, equip_mask: 512, part_id: 9, variant: 4, reserved: 0 },
 ];
 
 /// Horn shop. Note this table's field order is price-first, unlike the parts

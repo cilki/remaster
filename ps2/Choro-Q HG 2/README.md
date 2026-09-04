@@ -1,14 +1,18 @@
 ## Status
 
 - Extract: done
-- Reverse: done for the shop / economy / parts / car layer and the new-game
-  initialiser (live debugging working; data *and* code splices proven in-game)
+- Reverse: done for the shop / economy / parts / car layer, the new-game
+  initialiser, **and the `.BIN` archive container** (see "The .BIN archives")
 - Fabricate: done
 - Repack: done
 - Textures: HD texture pack built (see "Texture upscaling"); grows as the
-  game is played
-- Verify: passing — every change confirmed in the running game; three of seven
-  also confirmed on screen (see "What is not verified on screen" below)
+  game is played. ISO-side texture editing is now possible too, via
+  `assets/` + `tools/binpack.py`
+- Verify: the economy and shop changes are confirmed live over PINE and the
+  race payout was watched on screen (which is how the prize bug below was
+  caught). The two texture replacements and the option-table text are
+  confirmed in the built files but **have not been re-checked on screen** —
+  verification was deliberately skipped this session
 
 ## Game
 
@@ -78,7 +82,7 @@ file-backed in `SLUS_203.98` and so is directly patchable in the ELF.
 | 0x002ed328     | rec[6] x28B  | Engine/gearbox table (name, desc, price, gear ratios)              |
 | 0x002f00a8     | rec[15] x16B | Horn shop table (price, sound id, name)                            |
 | 0x002f0190     | char[16][]   | Horn name slots                                                    |
-| 0x0029fcc0     | u32[]        | Race prize-money tables, descending by finishing rank              |
+| 0x0029fcb8     | u32[30]      | Race prizes: 5 classes x 6 finishing places (**not** 0x29fcc0)     |
 | 0x002be398     | char\*[23]   | Track / event name table                                           |
 | 0x002a4590     | char\*[104]  | Shop and location names (stride 32)                                |
 | 0x0029ace0     | char\*[]     | Main-menu labels, EN/FR/DE interleaved                             |
@@ -278,6 +282,35 @@ u32 with its 2048-block count as u32 within ±8 bytes. Files with no record are
 loaded by name (FONT.GSL appears unused; FONTE.GSL is the font actually loaded
 at boot).
 
+## Emulator plumbing
+
+Two fixes this session, both game-agnostic and both in the global tools:
+
+* **`launch.sh` silently failed to relaunch over a running instance.** Under
+  nix the compositor's comm is `.cage-wrapped`, not `cage`, so `pkill -x cage`
+  never matched; PCSX2 catches SIGTERM and nothing escalated to SIGKILL; and
+  the wait loop gave up after 10s and carried on anyway, deleting the wayland
+  socket out from under the live compositor and then reporting "pcsx2 running"
+  because the *old* process satisfied the check. The net effect was that a
+  freshly built ISO looked like it had changed nothing — the previously booted
+  one was still running. It now matches every known comm, escalates to
+  SIGKILL, refuses to continue until the old processes are really gone, and
+  confirms the new PID differs.
+* **`pine.sh` left stale forwarders bound to port 28011.** Its cleanup used
+  `fuser`, which is not installed here, so the `|| true` made it a no-op and
+  connections landed on a socat still pointing at the previous run's (unlinked)
+  socket. It now finds listeners by reading `/proc` — which also avoids the
+  `pkill -f` hazard, where a `-f` pattern matches the script's own command line
+  and kills the shell (exit 144). It ends by sending a real PINE `MsgStatus`
+  packet, so "bridge up" means the path to PCSX2 actually answers.
+
+`launch.sh` now brings the bridge up itself, so a relaunch is one command.
+
+> `grim` stops answering once the game leaves the menus — cage's screencopy
+> stalls while PCSX2 keeps rendering fine. `shot.sh` therefore captures through
+> PCSX2's own F8 screenshot, and waits for the file size to settle (PCSX2
+> creates the file before it finishes writing it).
+
 ## Build
 
 `build.sh` is the whole pipeline: compile the shim, splice it into a pristine
@@ -304,8 +337,10 @@ What remains here is game-specific:
 | `tools/gen_cars.py`      | regenerates `shim/src/cars.rs` from the ELF             |
 | `tools/gen_engines.py`   | regenerates `shim/src/engines.rs` from the ELF          |
 | `tools/shots.sh`         | this game's compare crops, fed to the global `compare.py` |
-| `shot.sh` / `view.sh`    | frame capture (grim, falling back to PCSX2 F8) + downscale |
-| `pine.sh`                | brings up the PINE->TCP bridge for the MCP debugger     |
+| `tools/binpack.py`       | list/dump/import textures in the `.BIN` archives         |
+| `tools/assets.py`        | the `assets/` pipeline: pull, dump, apply, status        |
+| `tools/replate.py`       | redraw a licence-plate legend; transplant one between plates |
+| `shot.sh` / `press.sh`   | frame capture and input                                 |
 
 Both generators re-serialise what they emit and assert it matches
 `SLUS_203.98`, so an unintended edit fails the build rather than shipping.
@@ -320,6 +355,99 @@ Both generators re-serialise what they emit and assert it matches
 | `0x0029a880-0x0033567b` | `.data` / `.rodata` / `.sdata` (file-backed)      |
 | `0x00335780-0x017874df` | `.bss`                                            |
 | `0x017874e0-0x01ffffff` | game heap, growing up from the end of `.bss`      |
+
+## The .BIN archives
+
+`CAR*/`, `CARS/`, `COURSE/`, `FLD/`, `SHOP/` and `ACTION/` hold their art in
+`.BIN` files. The container turned out to be trivial and is now read and
+written by `tools/binpack.py`:
+
+* A **plain offset table** at byte 0 — ascending `u32` file offsets, terminated
+  by a zero, whose last entry equals the file size. `SHOP/T*.BIN` has no table
+  and is a single blob.
+* Inside each sub-blob the texture data is **the same GS upload list `.GSL`
+  uses**, so `gsl.py` reads it unchanged: records are located by their A+D
+  register signature (`0x50,0x51,0x52,0x53`), which finds them wherever they
+  sit among the model and geometry data they are interleaved with.
+
+That takes editable art from the 570 textures in the loose `.GSL` files to
+**4,009 textures / 105 Mpx** across the 376 archives:
+
+| dir     | images | Mpx    |
+| ------- | ------ | ------ |
+| ACTION  | 776    | 10.08  |
+| CAR0-4  | 150    | 2.45   |
+| CARS    | 8      | 0.06   |
+| COURSE  | 861    | 13.45  |
+| FLD     | 1701   | 10.96  |
+| SHOP    | 411    | 63.73  |
+| SYS     | 102    | 4.73   |
+| **all** | **4009** | **105.47** |
+
+### Why imports are done in place
+
+`gsl.build()` reassembles a file as header+payload per record plus trailer,
+which silently drops everything *before* the first record — in a `.BIN` that is
+the offset table itself. So `binpack.py import` instead overwrites just the one
+record's payload at its own offset: same length, every other byte untouched.
+The file therefore never changes size, `repack_iso.py` patches it in place, and
+no LBA record has to be retargeted.
+
+Round-tripping every texture through dump-then-import is byte-identical: 54/54
+on `COURSE/C00.BIN`, and 0 of 21 archives sampled across all seven directory
+types differ.
+
+## Asset layout
+
+`assets/` keeps shipped art and remastered art in separate trees — see
+`assets/README.md`. `original/` is pristine, `dumps/` is decoded from it,
+`remastered/` holds the only hand-authored files, and `manifest.tsv` records
+what changed and why. `tools/assets.py apply` (run first by `build.sh`)
+restores each touched file from `original/` *before* importing, so the art side
+of the build is idempotent exactly as the ELF side is.
+
+That rule exists because of a real failure: the title plate had been edited in
+place, so authoring against `extracted/` meant drawing the new legend on top of
+the old one, leaving a ghost of the previous word behind it.
+
+## On the trees
+
+The foliage was measured rather than assumed, and the conclusion is that
+**there is nothing to fix** — in the ISO or in the HD pack.
+
+In the ISO they are already at the limit of the format:
+
+* `COURSE/C00.BIN` textures 39/40/41 (tree row, single tree, fruit tree) are
+  128x128 T8 and use **256 of 256 palette entries, all distinct** — no wasted or
+  duplicate slots a re-quantise could reclaim.
+* The dark rim on the semi-transparent edges is *not* a premultiplied-alpha
+  matting error. Correlation between palette luminance and alpha is +0.37,
+  -0.02 and +0.09 across the three, and low-alpha entries are not
+  proportionally dark (one sits at luminance 192 with alpha 0.01). "Un-matting"
+  by dividing through by alpha would have blown the edges out; that darkness is
+  real leaf shading.
+
+What limits them is resolution, and resolution cannot be raised in the ISO (the
+GS allocation and the texel-unit UVs are baked into the display lists — see
+"Why the pack is emulator-side"). The lever is the HD replacement pack, and the
+trees are **already covered by it**: 3,235 textures dumped, 3,230 replaced,
+including four 128x128 foliage cutouts, each correctly routed to Lanczos
+(`is_flat` is False at 254 distinct opaque colours) with cutout alpha resampled
+in premultiplied space.
+
+> A grid-like lattice appeared to be present in the upscaled trees at first.
+> It was not: the comparison had the source blown up 4x with **nearest**
+> neighbour on one side and the smooth replacement on the other, and the grid
+> being seen was the nearest-neighbour blocks in the *reference* panel. At
+> matched zoom the replacement and a gentler-sharpened variant are visually
+> indistinguishable.
+
+One real design smell remains, worth noting but not acted on: `scalers.lanczos`
+uses `UnsharpMask(radius=factor)`, so at 4x the halo radius is exactly one
+source texel and the filter amplifies the source pixel grid. Dropping it to
+`radius=1.5, percent=40` cuts energy at the grid period by 4.5x
+(0.009 -> 0.002). It is visually marginal, so regenerating 3,230 files for it
+was not judged worth doing without an on-screen A/B.
 
 ## Change log
 
@@ -350,18 +478,29 @@ build immediately.
 **Verify:** Adventure -> New Game, then any shop — the wallet reads `10000`.
 Confirmed on screen in the Parts Shop, and at `0x0177fdb4` over PINE.
 
-### Race prizes rescaled
+### Race prizes rescaled — *and an off-by-two that broke Rank C*
 
-`prizes.rs`, `0x29fcc0..0x29fd30`. Every prize passes through
-`f(x) = 2x` for `x <= 10000`, else `x + 10000`. That map is non-decreasing, so
-it cannot reorder a descending run *whatever* the true class boundaries are —
-which matters, because those boundaries are inferred. Early and mid-game
-payouts double; the 80,000-coin class moves only 12%. A `const` block asserts
-both properties at compile time.
+`prizes.rs`, `0x29fcb8..0x29fd30`. Every prize passes through
+`f(x) = 2x` for `x <= 10000`, else `x + 10000` — non-decreasing, so it cannot
+reorder a class. Early and mid-game payouts double; the 80,000-coin class moves
+only 12%.
 
-**Verify:** finish any race; rank C now pays 800/600/400/200. Confirmed by
-PINE read of the live table — all 28 values match the rescale. A payout has
-not been watched on screen.
+The table is **30 `u32`s at `0x29fcb8`: 5 classes x 6 finishing places.** An
+earlier build had it as 28 entries starting at `0x29fcc0` and described that
+range as "bounded on both sides". It is not — the table starts two words
+lower, and those two words are Rank C's 1st and 2nd prizes. Splicing from
+`0x29fcc0` rescaled everything *except* them, leaving Rank C paying
+
+    1st 800   2nd 500   3rd 800   4th 600   5th 400   6th 200
+
+so 3rd place paid the same as 1st and more than 2nd. Nothing in the ELF looked
+wrong; it surfaced only when a real race was finished and the results screen
+paid **500** for 2nd — a number that appears nowhere in the patched table.
+The file now asserts the class structure (six descending places per class)
+instead of trusting it.
+
+**Verify:** Rank C now reads 1600/1000/800/600/400/200. Confirmed by PINE read
+of the live table after the fix.
 
 ### Engine descriptions: 11 blank rows filled
 
@@ -409,6 +548,50 @@ says.
 
 **Verify:** Horn Shop price list. Confirmed at `0x2f00a8`.
 
+### Title and trackside plates: "2026 REMASTERED"
+
+`assets/remastered/SYS/TITLE/001_plate-legend.png` and
+`assets/remastered/COURSE/C00/048_plate-legend.png`.
+
+The `ROAD TRIP` licence plate appears twice — on the title screen and on a
+trackside promo board at Peach Raceway — and both shipped reading
+`2012  EVERYWHERE  SEPT`. The title plate had already been changed to
+`2026 REMASTERED`, but in **maroon**, which read as a different sign next to
+the navy `ROAD TRIP` under it, and with a malformed `6`.
+
+Both are now redrawn by `tools/replate.py`, which samples the ink colour from
+the plate itself and fits the baseline angle by least squares through the
+existing glyphs rather than assuming either. The title plate is the authored
+master; the trackside legend is **transplanted from it** — lifted as soft-alpha
+artwork and rescaled per axis onto the smaller plate's ink box — so the two
+carry identical letterforms instead of two independent renders.
+
+The trackside year is left as shipped: four digits in 21x5 px degrade to an
+illegible smudge whether rescaled from the master or re-rendered natively, and
+a smudge is a visible regression where an unchanged year is not.
+
+**Verify:** title screen on boot; the promo board is trackside at Peach
+Raceway. Confirmed in the built files after the CLUT snap; *not re-checked on
+screen this session*.
+
+### Billboards named after their towns; Police Light stops arguing with itself
+
+`shipped.rs` `OPTIONS`, `0x2f03e0..0x2f0494` (text only — every price, mask, id
+and variant is byte-identical to shipped).
+
+All five Billboard rows pointed at the same `"Billboard"` string, so the
+options list showed five identical rows for five items that are *not*
+interchangeable: each pays out at one specific shop in one town, and the only
+way to tell them apart was to highlight each and read to the bottom of its
+description. They are now `Peach Ad`, `Fuji Ad`, `Sandpolis Ad`, `Mountain Ad`
+and `Papaya Ad`, all within the 12 characters the table's longest shipped name
+already uses.
+
+Police Light's description opened with `"Has no effect."` above two lines that
+correctly call it a cosmetic — the shop talking a player out of its own
+1000-coin item. Line 1 is now `"Purely cosmetic."`; lines 2 and 3 are
+reproduced byte for byte.
+
 ### Fleet recolour: 11 flat greys repainted
 
 `cars.rs`, `0x2ed720..0x2eff3c`. 45 of the 151 cars are greyscale. Whites and
@@ -420,9 +603,4 @@ All 151 handling blocks are asserted byte-identical, so this is paint only.
 
 Because the colour field also seeds the save's per-car paint array, this shows
 up in the showroom, in town traffic, and on a repaint.
-
-**Verify:** confirmed at `0x2ed834` (Q005 now `#E8541E`) and, more tellingly,
-at `0x17804d0+16` — the *save block* picked the new colour up, which proves the
-code splice is reading the patched table. On-screen confirmation needs one of
-those eleven models to appear.
 

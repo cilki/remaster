@@ -22,9 +22,9 @@ dependencies = [
 
 [[package]]
 name = "resplice-macros"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23ddac317d537e54ef8d927cbb8bbf19c1eeaab693319b6ecc06589cc2de9fd1"
+checksum = "04ade6dd0e3868cadabc0bfb5cb584b3e77fb5d6cab228a401d9a5fa558bf0f4"
 dependencies = [
  "proc-macro2",
  "quote",

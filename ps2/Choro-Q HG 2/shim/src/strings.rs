@@ -89,3 +89,48 @@ pub static TRANS_POWER: &[u8] = block(b"6-speed, torquey\0better top-speed\0 Gea
 pub static TRANS_SPEED: &[u8] = block(b"6-speed, long legs\0better top-speed\0 Gear Ratio****\0\0");
 pub static TRANS_WIDE: &[u8] = block(b"6-speed, wide band\0better top-speed\0 Gear Ratio*****\0\0");
 pub static TRANS_HYPER: &[u8] = block(b"6-speed, maximum\0better top-speed\0 Gear Ratio******\0\0");
+
+// --- Bolt-on options ---------------------------------------------------------
+
+/// Names for the five Billboard rows.
+///
+/// The shipped table points all five at the same string, `"Billboard"`, so the
+/// options list shows five identical rows and the only way to tell them apart
+/// is to highlight each one and read to the bottom of its description block --
+/// where the town finally appears ("a bakery in / Sandpolis."). The billboards
+/// are not interchangeable: each pays out at one specific shop in one town, so
+/// which one you are carrying matters.
+///
+/// Each row is renamed after its town. Kept to 12 characters, the width of the
+/// longest name this table already ships ("Police Light"), so nothing has to
+/// be assumed about how wide the name plate can draw.
+pub static BILLBOARD_PEACH: &[u8] = name(b"Peach Ad\0");
+pub static BILLBOARD_FUJI: &[u8] = name(b"Fuji Ad\0");
+pub static BILLBOARD_SANDPOLIS: &[u8] = name(b"Sandpolis Ad\0");
+pub static BILLBOARD_MOUNTAIN: &[u8] = name(b"Mountain Ad\0");
+pub static BILLBOARD_PAPAYA: &[u8] = name(b"Papaya Ad\0");
+
+/// Police Light, first line only.
+///
+/// Shipped block: `"Has no effect." / "Improves the car's" / "look" / ""`.
+/// Lines 2 and 3 already say exactly what the part is -- a cosmetic -- so the
+/// opening line telling the player it does nothing is the shop arguing against
+/// its own 1000-coin item. Only line 1 changes; the rest is reproduced byte
+/// for byte.
+pub static POLICE_LIGHT: &[u8] =
+    block(b"Purely cosmetic.\0Improves the car's\0look\0\0");
+
+/// Compile-time guard for a single name string (not a description block).
+///
+/// Names are plain C strings, so exactly one NUL, at the end. The 12-character
+/// limit is the longest name shipped in the options table.
+pub const fn name(s: &'static [u8]) -> &'static [u8] {
+    assert!(!s.is_empty() && s[s.len() - 1] == 0, "name must be NUL-terminated");
+    let mut i = 0;
+    while i < s.len() - 1 {
+        assert!(s[i] != 0, "name must contain exactly one NUL, at the end");
+        i += 1;
+    }
+    assert!(s.len() - 1 <= 12, "name longer than the shipped maximum of 12");
+    s
+}

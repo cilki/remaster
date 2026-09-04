@@ -118,21 +118,21 @@ Gotchas:
 - cage exits the moment its child exits, with no error of its own — always check
   `/root/.config/PCSX2/logs/emulog.txt` for the real cause.
 
-Prefer `launch.sh <iso> [wait_s]` (on PATH) for
-(re)launching: it kills stale instances (the process is named `.pcsx2-qt-wrapp`,
-which plain `pkill pcsx2-qt` misses — and never `pkill -f` a pattern that
-appears in your own command line), clears stale cage socket locks and
-`/dev/shm/pcsx2*` (the 256M /dev/shm limit SIGBUSes overlapping PCSX2
-instances), then launches under cage and waits for it to come up.
+Prefer `launch.sh <iso> [wait_s]` (on PATH) for (re)launching: it kills stale
+instances (the process is named `.pcsx2-qt-wrapp`, which plain `pkill pcsx2-qt`
+misses — and never `pkill -f` a pattern that appears in your own command line),
+clears stale cage socket locks and `/dev/shm/pcsx2*` (the 256M /dev/shm limit
+SIGBUSes overlapping PCSX2 instances), then launches under cage and waits for it
+to come up.
 
 ### PCSX2 configuration
 
 The config is declarative. The shared base ships at
-`/opt/remaster/PCSX2.base.ini` (wizard skip, PINE, pad bindings); each game
-may add overrides in `/workspace/pcsx2.ini` — same ini shape, its keys win,
-new keys/sections are additive. On every launch, `launch.sh` merges the two
-with `pcsx2ini.py` into `/root/.config/PCSX2/inis/PCSX2.ini`, so hand edits to
-the live ini are lost on relaunch: put anything that should persist (renderer
+`/opt/remaster/PCSX2.base.ini` (wizard skip, PINE, pad bindings); each game may
+add overrides in `/workspace/pcsx2.ini` — same ini shape, its keys win, new
+keys/sections are additive. On every launch, `launch.sh` merges the two with
+`pcsx2ini.py` into `/root/.config/PCSX2/inis/PCSX2.ini`, so hand edits to the
+live ini are lost on relaunch: put anything that should persist (renderer
 upscaling, texture replacement, hotkeys, debug logging, the audio backend) in
 `/workspace/pcsx2.ini` instead.
 
@@ -141,16 +141,16 @@ upscaling, texture replacement, hotkeys, debug logging, the audio backend) in
 Game-agnostic helpers installed on PATH (alongside `launch.sh` and
 `repack_iso.py`):
 
-| Tool                        | What it does                                                        |
-| --------------------------- | ------------------------------------------------------------------- |
-| `elfmap.py <elf> [va]`      | VA <-> file offset via the program headers; also a Python lib (`Img`) with string/word reads |
-| `dis.sh <elf> <va> [n]`     | disassemble n instructions at a VA (`mipsel-objdump`, R5900)        |
-| `xref.py <elf> <lo> [hi]`   | find `lui`/`addiu`-style pairs in executable segments that build an address in the range |
-| `gsldump.py <gsl> <outdir>` | export every texture in a `.GSL` (GS upload list) to PNG            |
-| `gslimport.py <gsl> <n> <png>` | import a PNG back over texture n, snapping to the record's CLUT  |
-| `upscale.py <pack-root> [f]` | build a PCSX2 replacement pack from `<pack-root>/dumps`, per-texture kernel choice (see `scalers.py`) |
-| `compare.py <prefix> <outdir> [shots]` | labelled side-by-side A/B images from a `<prefix>-off.png`/`-on.png` pair |
-| `pcsx2ini.py <base> [override ...]` | merge PCSX2 ini fragments to stdout, later keys win (used by `launch.sh`) |
+| Tool                                   | What it does                                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `elfmap.py <elf> [va]`                 | VA <-> file offset via the program headers; also a Python lib (`Img`) with string/word reads          |
+| `dis.sh <elf> <va> [n]`                | disassemble n instructions at a VA (`mipsel-objdump`, R5900)                                          |
+| `xref.py <elf> <lo> [hi]`              | find `lui`/`addiu`-style pairs in executable segments that build an address in the range              |
+| `gsldump.py <gsl> <outdir>`            | export every texture in a `.GSL` (GS upload list) to PNG                                              |
+| `gslimport.py <gsl> <n> <png>`         | import a PNG back over texture n, snapping to the record's CLUT                                       |
+| `upscale.py <pack-root> [f]`           | build a PCSX2 replacement pack from `<pack-root>/dumps`, per-texture kernel choice (see `scalers.py`) |
+| `compare.py <prefix> <outdir> [shots]` | labelled side-by-side A/B images from a `<prefix>-off.png`/`-on.png` pair                             |
+| `pcsx2ini.py <base> [override ...]`    | merge PCSX2 ini fragments to stdout, later keys win (used by `launch.sh`)                             |
 
 `gsl.py` (the `.GSL` reader/writer) and `scalers.py` (upscaling kernels) are
 importable modules living in the same directory.
@@ -163,6 +163,10 @@ for future steps. First check for debug symbols. The final goal of this step is
 to reverse-engineer parts of the game that we might want to modify later.
 Usually we want to leave the low-level engine code untouched to avoid getting
 into trouble.
+
+> One thing we always want is to unlock all levels, items, characters, etc from
+> the start. Most likely the player doesn't want to go through the entire game
+> to satisfy their nostalgia itch.
 
 ### Live debugging
 
@@ -189,10 +193,10 @@ sleep 2; grim "${4:-/tmp/screen.png}"
 ```
 
 Try to identify constructs that the user might want to modify (health, money,
-item counts). The debugger has a way to narrow memory locations by searching for
-a sequence of values. Lift `repr(C)` Rust structs for these values into the
-shim. Also lift the values themselves as static arrays. This allows us to easily
-modify the structs embedded in the binary.
+items, unlockables). The debugger has a way to narrow memory locations by
+searching for a sequence of values. Lift `repr(C)` Rust structs for these values
+into the shim. Also lift the values themselves as static arrays. This allows us
+to easily modify the structs embedded in the binary.
 
 Connect to the PCSX2 MCP debugger (the `pcsx2` server, preconfigured in the
 container image). With stock PCSX2 only the PINE backend is available: memory
@@ -273,8 +277,8 @@ afterwards proves the retargeting works for it.
 
 To debug repack problems, set `CdvdVerboseReads = true` under `[EmuCore]` plus
 `EnableVerbose`/`EnableFileLogging = true` under `[Logging]` in
-`/workspace/pcsx2.ini` (and relaunch) to get per-sector read logs in
-emulog.txt, and confirm reads land on the expected (e.g. appended) sectors.
+`/workspace/pcsx2.ini` (and relaunch) to get per-sector read logs in emulog.txt,
+and confirm reads land on the expected (e.g. appended) sectors.
 
 ## Verify step
 

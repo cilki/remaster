@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-resplice-macros = "0.0.2"
+resplice-macros = "0.0.3"
 
 [lib]
 crate-type = ["rlib"]
