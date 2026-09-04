@@ -39,6 +39,12 @@ COPY mcp.json /etc/claude-code/managed-mcp.json
 # PS2's Emotion Engine, used by the skill's Fabricate step
 COPY SKILL.md mipsel-ps2-elf.json /root/.claude/skills/remaster-ps2/
 
+# Skill helper tools, on PATH so the agent can invoke them by name (gsl.py
+# and scalers.py are modules imported by their neighbours, which locate them
+# via their own directory)
+COPY tools/*.py tools/*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.py /usr/local/bin/*.sh
+
 # PCSX2 (Qt) supports Wayland natively; select it explicitly since Qt's
 # auto-detection has no session info inside the container and would fall
 # back to X11. The host Wayland socket is mounted at the fixed path
@@ -62,58 +68,17 @@ RUN mkdir -m 700 -p /tmp/runtime /tmp/cagert
 # knows it's inside a sandboxed container
 ENV IS_SANDBOX=1
 
-# Pre-baked PCSX2 config: skip the first-run setup wizard (the BIOS lands at
-# the default path, so the wizard has nothing to configure), enable PINE so
-# pcsx2-mcp can connect to stock PCSX2 (port 28011), and point the game list
-# at the mounted game directory. SettingsVersion must be present or PCSX2
-# resets the config and re-runs the wizard. BIOS files must be mounted at
-# /root/.config/PCSX2/bios (see README).
+# Pre-baked PCSX2 config: skips the first-run setup wizard (the BIOS lands at
+# the default path, so the wizard has nothing to configure), enables PINE, and
+# binds pad 1 to the keyboard — see PCSX2.base.ini itself. BIOS files must be
+# mounted at /root/.config/PCSX2/bios (see README).
 #
-# Pad 1 is bound explicitly to PCSX2's stock keyboard layout (arrows = d-pad,
-# WASD/TFGH = sticks, IJKL = face buttons) so the agent can drive the game
-# deterministically via wtype; the mapping is documented in SKILL.md and must
-# stay in sync with it. Keyboard "analog" input is full-deflection only.
+# The base is installed as the initial config so a bare `cage -- pcsx2-qt`
+# works; launch.sh regenerates the live ini from the base merged with the
+# game's own /workspace/pcsx2.ini overrides (via pcsx2ini.py) on each launch.
+COPY PCSX2.base.ini /opt/remaster/PCSX2.base.ini
 RUN mkdir -p /root/.config/PCSX2/inis /root/.config/PCSX2/bios \
-    && printf '%s\n' \
-       '[UI]' \
-       'SettingsVersion = 1' \
-       'SetupWizardIncomplete = false' \
-       '' \
-       '[EmuCore]' \
-       'EnablePINE = true' \
-       '' \
-       '[GameList]' \
-       'RecursivePaths = /workspace/game' \
-       '' \
-       '[Hotkeys]' \
-       'Screenshot = Keyboard/F8' \
-       '' \
-       '[Pad1]' \
-       'Type = DualShock2' \
-       'Up = Keyboard/Up' \
-       'Down = Keyboard/Down' \
-       'Left = Keyboard/Left' \
-       'Right = Keyboard/Right' \
-       'Triangle = Keyboard/I' \
-       'Circle = Keyboard/L' \
-       'Cross = Keyboard/K' \
-       'Square = Keyboard/J' \
-       'Select = Keyboard/Backspace' \
-       'Start = Keyboard/Return' \
-       'L1 = Keyboard/Q' \
-       'L2 = Keyboard/1' \
-       'R1 = Keyboard/E' \
-       'R2 = Keyboard/3' \
-       'L3 = Keyboard/2' \
-       'R3 = Keyboard/4' \
-       'LUp = Keyboard/W' \
-       'LLeft = Keyboard/A' \
-       'LDown = Keyboard/S' \
-       'LRight = Keyboard/D' \
-       'RUp = Keyboard/T' \
-       'RLeft = Keyboard/F' \
-       'RDown = Keyboard/G' \
-       'RRight = Keyboard/H' \
+    && sed '/^\s*[;#]/d' /opt/remaster/PCSX2.base.ini \
        > /root/.config/PCSX2/inis/PCSX2.ini
 
 # Launch claude in the foreground; the container is the permission boundary

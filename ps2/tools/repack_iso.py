@@ -29,12 +29,13 @@ change size like any other file; its own LBA table is patched wherever the
 ELF ends up.
 
 Usage:
-  remaster_iso.py <original.iso> <extracted_dir> <out.iso> [--test-move /PATH]
+  repack_iso.py <original.iso> <extracted_dir> <out.iso> [--test-move /PATH]
 
 --test-move relocates the named file to the appended region even though its
 content is unchanged; the game booting identically afterwards proves the
 retargeting works for it.
 """
+
 import os
 import re
 import struct
@@ -58,7 +59,7 @@ def read_dir_records(img, lba, size):
             off = (off // SECTOR + 1) * SECTOR
             continue
         ident_len = img[base + off + 32]
-        ident = bytes(img[base + off + 33:base + off + 33 + ident_len])
+        ident = bytes(img[base + off + 33 : base + off + 33 + ident_len])
         extent = struct.unpack_from("<I", img, base + off + 2)[0]
         length = struct.unpack_from("<I", img, base + off + 10)[0]
         flags = img[base + off + 25]
@@ -75,8 +76,7 @@ def walk_tree(img):
     todo = [("", root_lba, root_size)]
     while todo:
         prefix, lba, size = todo.pop()
-        for rec, ident, extent, length, is_dir in read_dir_records(
-                img, lba, size):
+        for rec, ident, extent, length, is_dir in read_dir_records(img, lba, size):
             if ident in (b"\x00", b"\x01"):
                 continue
             name = ident.split(b";")[0].decode("latin1")
@@ -102,7 +102,7 @@ def boot_elf_path(img, tree):
     if cnf is None:
         sys.exit("no /SYSTEM.CNF in image; not a PS2 disc?")
     _, lba, size = cnf
-    text = bytes(img[lba * SECTOR:lba * SECTOR + size]).decode("latin1")
+    text = bytes(img[lba * SECTOR : lba * SECTOR + size]).decode("latin1")
     m = re.search(r"BOOT2\s*=\s*cdrom0?:\\?([^;\r\n]+)", text)
     if not m:
         sys.exit(f"no BOOT2 line in SYSTEM.CNF: {text!r}")
@@ -115,7 +115,7 @@ def main():
     while "--test-move" in argv:
         i = argv.index("--test-move")
         test_moves.add(argv[i + 1])
-        del argv[i:i + 2]
+        del argv[i : i + 2]
     if len(argv) != 3:
         sys.exit(__doc__)
     orig_iso, extracted, out_iso = argv
@@ -129,7 +129,7 @@ def main():
     if elf_path not in tree:
         sys.exit(f"boot ELF {elf_path} not present in image")
     _, elf_lba, elf_size = tree[elf_path]
-    if img[elf_lba * SECTOR:elf_lba * SECTOR + 4] != b"\x7fELF":
+    if img[elf_lba * SECTOR : elf_lba * SECTOR + 4] != b"\x7fELF":
         sys.exit(f"no ELF magic at {elf_path}")
 
     inplace, appended, unchanged = [], [], 0
@@ -142,12 +142,12 @@ def main():
         if not os.path.exists(src):
             sys.exit(f"missing from extracted dir: {path}")
         new = open(src, "rb").read()
-        old = bytes(img[lba * SECTOR:lba * SECTOR + size])
+        old = bytes(img[lba * SECTOR : lba * SECTOR + size])
         if new == old and path not in test_moves:
             unchanged += 1
             continue
         if len(new) == size and path not in test_moves:
-            img[lba * SECTOR:lba * SECTOR + size] = new
+            img[lba * SECTOR : lba * SECTOR + size] = new
             inplace.append(path)
             continue
         # Needs relocation: append, repoint the directory record, and queue
@@ -159,14 +159,13 @@ def main():
         moves[path] = (new_lba, len(new))
         if path == elf_path:
             elf_new_off, elf_new_size = new_lba * SECTOR, len(new)
-        print(f"  moved {path}: lba {lba}->{new_lba}, "
-              f"size {size}->{len(new)}")
+        print(f"  moved {path}: lba {lba}->{new_lba}, size {size}->{len(new)}")
 
     # Retarget LBA-table records inside the boot ELF at its final home.
     # Records are located against the ELF's pre-retarget content (which still
     # holds the original LBA values wherever its table ended up), so earlier
     # writes can't create false matches.
-    current_elf = memoryview(img)[elf_new_off:elf_new_off + elf_new_size]
+    current_elf = memoryview(img)[elf_new_off : elf_new_off + elf_new_size]
     pristine_elf = bytes(current_elf)
     writes = {}
     for path, (new_lba, new_size) in sorted(moves.items()):
@@ -181,28 +180,34 @@ def main():
             if o % 4:
                 continue
             for d in (4, 8, -4, -8):
-                if 0 <= o + d <= len(pristine_elf) - 4 \
-                        and pristine_elf[o + d:o + d + 4] == pb:
+                if (
+                    0 <= o + d <= len(pristine_elf) - 4
+                    and pristine_elf[o + d : o + d + 4] == pb
+                ):
                     for at, val in ((o, new_lba), (o + d, blocks(new_size))):
                         prev = writes.get(at)
                         if prev is not None and prev[0] != val:
-                            sys.exit(f"conflicting patch at elf+{at:#x}: "
-                                     f"{prev[1]} vs {path}")
+                            sys.exit(
+                                f"conflicting patch at elf+{at:#x}: {prev[1]} vs {path}"
+                            )
                         writes[at] = (val, path)
-                    print(f"    LBA record for {path} at elf+{o:#x} "
-                          f"retargeted")
+                    print(f"    LBA record for {path} at elf+{o:#x} retargeted")
                     hits += 1
                     break
         if hits == 0:
-            print(f"    warning: no LBA record for {path}; assuming it is "
-                  f"loaded by name only")
+            print(
+                f"    warning: no LBA record for {path}; assuming it is "
+                f"loaded by name only"
+            )
     for at, (val, _) in writes.items():
-        current_elf[at:at + 4] = struct.pack("<I", val)
+        current_elf[at : at + 4] = struct.pack("<I", val)
 
     open(out_iso, "wb").write(img)
-    print(f"{unchanged} unchanged, {len(inplace)} patched in place, "
-          f"{len(appended)} appended; image {len(img) // SECTOR} sectors "
-          f"-> {out_iso}")
+    print(
+        f"{unchanged} unchanged, {len(inplace)} patched in place, "
+        f"{len(appended)} appended; image {len(img) // SECTOR} sectors "
+        f"-> {out_iso}"
+    )
     for p in inplace:
         print(f"  in-place: {p}")
 

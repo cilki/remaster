@@ -63,7 +63,7 @@ in mkShell rec {
     pcsx2
     claude-code
     p7zip
-    xorriso
+    ffmpeg
     mame-tools
     resplice
     python

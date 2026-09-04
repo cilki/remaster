@@ -2,6 +2,19 @@
 # launch.sh <iso> [wait_s] — cleanly (re)launch PCSX2 under cage and wait.
 set -u
 iso="$1"; wait_s="${2:-25}"
+
+# Regenerate PCSX2.ini from the base config plus the game's overrides, so the
+# config is declarative: hand edits to the live ini are lost on relaunch, and
+# persistent settings belong in /workspace/pcsx2.ini.
+base=/opt/remaster/PCSX2.base.ini
+if [ -f "$base" ]; then
+  ov=""
+  [ -f /workspace/pcsx2.ini ] && ov=/workspace/pcsx2.ini
+  pcsx2ini.py "$base" $ov > /tmp/PCSX2.ini.new \
+    && mkdir -p /root/.config/PCSX2/inis \
+    && mv /tmp/PCSX2.ini.new /root/.config/PCSX2/inis/PCSX2.ini
+fi
+
 pkill -x .pcsx2-qt-wrapp 2>/dev/null; pkill -x cage 2>/dev/null
 for i in $(seq 1 20); do
   pgrep -x .pcsx2-qt-wrapp >/dev/null || pgrep -x cage >/dev/null || break

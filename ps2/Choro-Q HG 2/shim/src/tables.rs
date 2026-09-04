@@ -74,7 +74,8 @@ pub struct PartEntry {
     /// splices may also point it at their own injected strings.
     pub name: Name,
     /// Blurb shown under the name, e.g. `" Roads **** Off-Road ****"`.
-    pub description: Ptr32,
+    /// Shipped strings run up to 20 characters.
+    pub description: Name,
     /// Price in Choro Q Coins.
     pub price: u32,
     /// Eight 8.8 fixed-point stats. How many are meaningful, and what they
@@ -93,7 +94,7 @@ impl PartEntry {
         unsafe { &*(self.stats.as_ptr() as *const TireGrip) }
     }
 
-    /// Engine reading of [`PartEntry::stats`]: reverse plus five forward gears.
+    /// Transmission reading of [`PartEntry::stats`]: reverse plus forward gears.
     #[inline]
     pub fn gearing(&self) -> &EngineGearing {
         unsafe { &*(self.stats.as_ptr() as *const EngineGearing) }
@@ -135,12 +136,13 @@ pub struct EngineGearing {
 pub const TIRE_TABLE: u32 = 0x002e_ca70;
 pub const TIRE_COUNT: usize = 13;
 
-/// Engine / gearbox catalogue: 6 entries.
+/// Transmission catalogue: 6 entries.
 ///
 /// Shipped contents: Normal 200, Sports 1000, Power 2000, Speed 4000,
-/// Wide 7000, Hyper 10000.
-pub const ENGINE_TABLE: u32 = 0x002e_d328;
-pub const ENGINE_COUNT: usize = 6;
+/// Wide 7000, Hyper 10000. Its stats are gear ratios and the shop sells it
+/// under "Transmission" -- the "Engine" list is [`ENGINE_SHOP_TABLE`].
+pub const TRANSMISSION_TABLE: u32 = 0x002e_d328;
+pub const TRANSMISSION_COUNT: usize = 6;
 
 /// # Safety
 /// Valid only while running inside the game with the ELF loaded at its
@@ -153,8 +155,15 @@ pub unsafe fn tires() -> &'static [PartEntry] {
 /// # Safety
 /// See [`tires`].
 #[inline]
-pub unsafe fn engines() -> &'static [PartEntry] {
-    core::slice::from_raw_parts(ENGINE_TABLE as *const PartEntry, ENGINE_COUNT)
+pub unsafe fn transmissions() -> &'static [PartEntry] {
+    core::slice::from_raw_parts(TRANSMISSION_TABLE as *const PartEntry, TRANSMISSION_COUNT)
+}
+
+/// # Safety
+/// See [`tires`].
+#[inline]
+pub unsafe fn engines() -> &'static [EngineEntry] {
+    core::slice::from_raw_parts(ENGINE_SHOP_TABLE as *const EngineEntry, ENGINE_SHOP_COUNT)
 }
 
 // ---------------------------------------------------------------------------
@@ -170,10 +179,10 @@ pub struct HornEntry {
     /// ("Train Horn").
     pub sound_id: u32,
     /// Name, stored in a 16-byte fixed slot in the block at [`HORN_NAMES`].
-    pub name: Ptr32,
+    pub name: Name,
     /// Points at an empty string in `.sdata` (0x333e70) for every shipped
     /// entry, so its role is unconfirmed — most likely an unused description.
-    pub description: Ptr32,
+    pub description: Name,
 }
 
 /// Horn shop table: 14 entries (ids 0x3c..0x56 stepping by 2).
@@ -264,6 +273,10 @@ const _: () = assert!(core::mem::size_of::<HornEntry>() == 16);
 const _: () = assert!(core::mem::size_of::<NpcEntry>() == 16);
 const _: () = assert!(core::mem::size_of::<TireGrip>() == 16);
 const _: () = assert!(core::mem::size_of::<EngineGearing>() == 16);
+const _: () = assert!(core::mem::size_of::<SimplePart>() == 16);
+const _: () = assert!(core::mem::size_of::<OptionPart>() == 20);
+const _: () = assert!(core::mem::size_of::<Car>() == 68);
+const _: () = assert!(core::mem::size_of::<Name>() == 4);
 
 // ---------------------------------------------------------------------------
 // Remaining parts categories
@@ -278,8 +291,8 @@ const _: () = assert!(core::mem::size_of::<EngineGearing>() == 16);
 /// meaning of [`SimplePart::value`] is per-category — see the table consts.
 #[repr(C)]
 pub struct SimplePart {
-    pub name: Ptr32,
-    pub description: Ptr32,
+    pub name: Name,
+    pub description: Name,
     pub price: u32,
     pub value: u32,
 }
@@ -287,8 +300,8 @@ pub struct SimplePart {
 /// A bolt-on option (water ski, wing, police light, billboard). 20 bytes.
 #[repr(C)]
 pub struct OptionPart {
-    pub name: Ptr32,
-    pub description: Ptr32,
+    pub name: Name,
+    pub description: Name,
     pub price: u32,
     /// Inferred: equip bitmask, consistently `1 << part_id` in the shipped rows.
     pub equip_mask: u16,
@@ -371,3 +384,66 @@ pub unsafe fn money() -> *mut u32 {
 
 const _: () = assert!(core::mem::size_of::<SimplePart>() == 16);
 const _: () = assert!(core::mem::size_of::<OptionPart>() == 20);
+
+// ---------------------------------------------------------------------------
+// Car catalogue
+// ---------------------------------------------------------------------------
+
+/// Base address of the 151-entry car catalogue in `.rodata`.
+pub const CAR_TABLE: usize = 0x002e_d720;
+/// Bytes per catalogue entry.
+pub const CAR_STRIDE: usize = 68;
+/// Number of cars in the catalogue. The table runs right up to the lights
+/// table at `0x2eff40`, which pins the count exactly.
+pub const CAR_COUNT: usize = 151;
+
+/// One car in the catalogue. 68 bytes.
+///
+/// The 15 floats are the body's handling parameters; the remaster leaves them
+/// alone except where a car is deliberately retuned.
+#[repr(C)]
+pub struct Car {
+    /// Short model name ("Q001".."Q150") in `.sdata`.
+    pub name: Ptr32,
+    /// Default body colour, `0x00RRGGBB`. Copied into the save block by the
+    /// new-game initialiser, so it is both the showroom and AI-traffic colour.
+    pub colour: u32,
+    /// Handling parameters (grip, mass, drive balance, ...).
+    pub handling: [f32; 15],
+}
+
+// ---------------------------------------------------------------------------
+// Engine catalogue
+// ---------------------------------------------------------------------------
+
+/// One engine in the shop's engine list. 24 bytes.
+///
+/// Distinct from [`PartEntry`], which backs the *transmission* list at
+/// [`TRANSMISSION_TABLE`] -- that table's stats are gear ratios, and the shop
+/// sells it under "Transmission". This is the list under "Engine", and its
+/// numbers are the "Power" and "Energy Use" lines the shop prints.
+#[repr(C)]
+pub struct EngineEntry {
+    /// Display name ("Normal", "Panther", "Blue MAX", ... "Devil Engine").
+    pub name: Name,
+    /// Blurb above the stat lines. Empty for 11 of the 12 shipped engines.
+    pub description: Name,
+    /// Price in Choro Q Coins.
+    pub price: u32,
+    /// Output, shown as `Power power/10` (1500 renders as "Power 150").
+    pub power: u32,
+    /// "Energy Use" -- running cost, so lower is better. Zero on Devil Engine.
+    pub energy_use: u32,
+    /// 0 for most engines, 1 on Hyper MAX and 2 on Devil Engine; looks like an
+    /// unlock/class tier rather than a stat.
+    pub tier: u32,
+}
+
+/// Engine catalogue: 12 entries at `0x002eced0..0x002ecff0`.
+///
+/// Bounded by junk on both sides -- the words before `0x2eced0` and after
+/// `0x2ecff0` decode as string data, not records.
+pub const ENGINE_SHOP_TABLE: u32 = 0x002e_ced0;
+pub const ENGINE_SHOP_COUNT: usize = 12;
+
+const _: () = assert!(core::mem::size_of::<EngineEntry>() == 24);

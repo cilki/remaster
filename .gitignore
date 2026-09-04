@@ -2,3 +2,4 @@ workspace
 target
 extracted
 *.iso
+__pycache__
