@@ -31,8 +31,28 @@ RUN mkdir -p /usr/local/bin \
     && chmod +x /usr/local/bin/pcsx2-mcp
 ENV PATH=/usr/local/bin:$PATH
 
-# Register the pcsx2-mcp server via managed MCP config; this is exclusive,
-# so sessions in the container get only this server
+# Install REA (https://github.com/morluto/rea): MCP server + CLI that drives
+# Ghidra headless for the skill's Reverse step. Ghidra, the JDK and the
+# GHIDRA_INSTALL_DIR/JAVA_HOME/REA_* env it reads all come from shell.nix.
+# Pinned: REA's bridge is version-specific and its Ghidra MIPS admission
+# rules (see tools/rea_elf.py) are what the skill is written against.
+RUN mkdir -p /opt/rea && cd /opt/rea \
+    && npm init -y >/dev/null \
+    && npm install --omit=dev --no-audit --no-fund --ignore-scripts rea-agents@6.7.0
+
+RUN printf '#!/bin/sh\nexec node /opt/rea/node_modules/rea-agents/scripts/rea.mjs "$@"\n' \
+       > /usr/local/bin/rea \
+    && chmod +x /usr/local/bin/rea
+
+# REA's own skill: generic guidance on driving its MCP tools (summary-first,
+# evidence IDs, close_binary). remaster-ps2 builds on it for the PS2 specifics
+RUN mkdir -p /root/.claude/skills \
+    && cp -r /opt/rea/node_modules/rea-agents/skills/reverse-engineer-anything \
+             /root/.claude/skills/
+
+# Register the pcsx2-mcp and rea servers via managed MCP config; this is
+# exclusive, so sessions in the container get only these servers. Never run
+# `rea setup` in the container - it would try to write ~/.claude.json instead
 COPY mcp.json /etc/claude-code/managed-mcp.json
 
 # Built-in skill; mipsel-ps2-elf.json is the custom rustc target for the

@@ -46,6 +46,14 @@ parts of the game into a rust-based "shim". Finally it will add new content and
 enhance the existing assets. Progress is tracked in `README.md` so sessions can
 be resumed.
 
+For reversing, the image bundles [REA](https://github.com/morluto/rea) as an MCP
+server driving Ghidra 12 headless with the
+[Emotion Engine extension](https://github.com/chaoticgd/ghidra-emotionengine-reloaded),
+so the agent decompiles the game's R5900 code rather than reading raw
+disassembly, and takes the function bounds for its `resplice` splices from
+there. Expect the first Ghidra import of an ELF to take a minute; nothing
+needs to be configured on the host.
+
 The agent will repeatedly launch PCSX2 in a separate window on your screen. This
 allows the agent to manipulate the game autonomously as it works. You can still
 interact with the game to help the agent. For some games, the agent is painfully

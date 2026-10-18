@@ -1,9 +1,9 @@
 ---
 name: remaster-ps2
 description:
-  Remaster a PS2 game end-to-end - extract the ISO, reverse-engineer it with the
-  PCSX2 debugger, modify code and assets, repack a runnable ISO, and verify it
-  in the emulator.
+  Remaster a PS2 game end-to-end - extract the ISO, reverse-engineer it with
+  REA/Ghidra and the PCSX2 debugger, modify code and assets, repack a runnable
+  ISO, and verify it in the emulator.
 ---
 
 # REmaster skill
@@ -143,6 +143,8 @@ Game-agnostic helpers installed on PATH (alongside `launch.sh` and
 
 | Tool                                   | What it does                                                                                          |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `rea_elf.py <elf> [out]`               | write the REA-admissible copy of a PS2 ELF (`<elf>.rea.elf`), see the Reverse step                    |
+| `rea <cmd> <elf.rea.elf> ...`          | REA CLI (same engine as the `rea` MCP server): `inspect`, `search`, `function`, `decompile`, `xrefs`  |
 | `elfmap.py <elf> [va]`                 | VA <-> file offset via the program headers; also a Python lib (`Img`) with string/word reads          |
 | `dis.sh <elf> <va> [n]`                | disassemble n instructions at a VA (`mipsel-objdump`, R5900)                                          |
 | `xref.py <elf> <lo> [hi]`              | find `lui`/`addiu`-style pairs in executable segments that build an address in the range              |
@@ -160,13 +162,104 @@ importable modules living in the same directory.
 Search `/workspace/extracted` for the game executable (named by `BOOT2` in
 `SYSTEM.CNF`). Catalog the available files and assets in `/workspace/README.md`
 for future steps. First check for debug symbols. The final goal of this step is
-to reverse-engineer parts of the game that we might want to modify later.
+to reverse-engineer parts of the game that we might want to modify later, using
+REA for the code (static) and the PCSX2 debugger for the data (live) - the two
+are complementary: REA tells you what a routine does and where it lives, the
+debugger tells you which of its globals hold the value you're looking at.
 Usually we want to leave the low-level engine code untouched to avoid getting
 into trouble.
 
 > One thing we always want is to unlock all levels, items, characters, etc from
 > the start. Most likely the player doesn't want to go through the entire game
 > to satisfy their nostalgia itch.
+
+### Static analysis with REA
+
+Use REA (the `rea` MCP server, preconfigured in the container) as the primary
+tool for reading game code. It drives Ghidra 12 headless with the
+[ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded)
+extension, so PS2 ELFs decompile as the Emotion Engine language
+(`r5900:LE:32:default`, preselected via `REA_GHIDRA_LANGUAGE_ID`): MMI/128-bit
+GPR halves, VU0 macro mode, COP2, `EI`/`DI`, syscalls all decode. Don't fall
+back to hand-reading objdump output when a decompilation would answer the
+question. The `reverse-engineer-anything` skill (installed alongside this one)
+documents REA's tools in general; the PS2-specific rules are:
+
+1. **Always open the `.rea.elf` copy, never the boot ELF itself.** REA screens
+   MIPS ELF headers before Ghidra runs and rejects the MIPS-III / 5900 / EABI64
+   flags every PS2 ELF carries. `rea_elf.py` writes a byte-identical copy with
+   only `e_flags` normalised; every address REA reports applies 1:1 to the real
+   ELF. Do this once per ELF, right after Extract:
+
+   ```sh
+   mkdir -p /workspace/rea
+   rea_elf.py /workspace/extracted/SLUS_XXX.XX /workspace/rea/SLUS_XXX.XX.rea.elf
+   ```
+
+   Keep the copy outside `/workspace/extracted` so it can never end up in the
+   repacked image. It is for analysis only: resplice and `repack_iso.py` always
+   take the original. Run `rea_elf.py` on the spliced ELF too if you want to
+   inspect your own patch.
+
+2. **Workflow.** `open_binary` on the `.rea.elf`, then `binary_overview` for
+   the segment map and counts. Find things via `search_strings` /
+   `search_procedures` / `xrefs` (strings -> the code that uses them is the
+   fastest route to game logic), `search_bytes` for immediates such as a
+   starting-money constant, then `procedure_pseudo_code` or `analyze_function`
+   for the dossier (pseudocode, assembly, callers/callees, body ranges,
+   referenced strings). Name what you learn with `set_address_name` /
+   `annotate_native_function` so later output reads well - these edits are
+   per-session, so also record them in `/workspace/README.md`. Reach for the
+   narrow tools (`procedure_info`, `procedure_pseudo_code`, `procedure_callees`,
+   `xrefs`) before `analyze_function`: a full dossier on a big function is
+   large. Call `close_binary` when you move on. The first import takes
+   ~30-60 s (and the ELF is re-imported after a `close_binary`), so keep one
+   session open while you work rather than opening/closing per question.
+
+3. **Hand-off to resplice.** Every code change in Fabricate is a
+   `#[Splice(begin, end)]` over a function, so for each function you intend to
+   replace, capture from `procedure_info` / the `analyze_function` dossier:
+   - `procedure.address` -> `begin`;
+   - the body ranges' `end` is **inclusive**, so `end = last_end + 1` (the
+     next function's start; word-aligned). A non-contiguous body or a function
+     that shares a tail with another is a sign to splice a smaller piece
+     instead;
+   - the pseudocode and `assembly` as the spec for a faithful Rust port -
+     including delay-slot side effects, which the decompiler folds in but the
+     assembly shows; the shipped code is load-bearing beyond the one value you
+     want to change;
+   - `callees` for anything the port must still call (transmute the address to
+     an `extern "C" fn`), `referenced_names`/`outgoing_references` for the
+     globals it touches, and `inspect_native_data_type` on any struct Ghidra
+     recovered to lift it as `repr(C)` into the shim;
+   - whether each global is file-backed (`.data`/`.rodata`/`.sdata` ->
+     patchable in the ELF, confirm with `address_to_file_offset` or
+     `elfmap.py`) or `.bss` (runtime only -> needs the splice).
+
+   A spliced function shows up afterwards as a thunk (`j <inject base>`), and
+   REA decompiles the Rust on the other side - a useful way to review your own
+   patch.
+
+4. **Other binaries.** Look for a `.mdebug` section in `binary_overview`'s
+   segment list (or `readelf -S`) first: the extension's STABS analyzer
+   recovers names and types from unstripped ELFs, which changes how much of
+   the above you need to do by hand. IOP modules (`.IRX`) are out of REA's
+   reach: they are R3000 code in a Sony-specific ELF type (`e_type 0xff80`)
+   that REA's MIPS admission does not accept, so for those (rarely needed -
+   they're sound/memcard/pad drivers) fall back to `dis.sh`/capstone. Raise
+   `REA_GHIDRA_STARTUP_TIMEOUT_MS` if a large ELF times out during import.
+
+The CLI (`rea inspect|search|function|decompile|xrefs <elf.rea.elf> ...
+--format json`) is the same engine and is handy in scripts, e.g. to dump every
+function that references a table:
+
+```sh
+rea xrefs /workspace/rea/SLUS_XXX.XX.rea.elf 0x2ed720 --format json
+```
+
+Never run `rea setup`, `rea update` or `rea uninstall` here: the server is
+registered through the container's managed MCP config and those commands would
+try to rewrite `~/.claude.json`.
 
 ### Live debugging
 
@@ -241,9 +334,12 @@ Two mechanisms are available:
   colors, text, upscale textures, etc.
 - **Code changes**: use the `resplice` crate to make changes to the game via
   `/workspace/shim`. This splices compiled Rust functions over address ranges in
-  the game ELF (`#[Splice(begin, end)]`). Compile the shim with the custom PS2
-  target installed alongside this skill. Then call `resplice` on the original
-  ELF and the rlib to produce a patched binary.
+  the game ELF (`#[Splice(begin, end)]`). The range and the behaviour to
+  reproduce come from the REA decompilation gathered in the Reverse step (see
+  "Hand-off to resplice" there) - don't guess bounds from a disassembly
+  listing. Compile the shim with the custom PS2 target installed alongside
+  this skill. Then call `resplice` on the original ELF (never the `.rea.elf`
+  copy) and the rlib to produce a patched binary.
 
 If you find you need to modify some code that hasn't been reverse-engineered
 yet, go back to the Reverse step and do so before continuing. Log every

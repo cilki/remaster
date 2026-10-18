@@ -20,14 +20,65 @@ let
     "rustfmt"
   ];
 
+  mipselBinutils = pkgsCross.mipsel-linux-gnu.buildPackages.binutils;
+
   # mipsel-ps2-elf.json names mipsel-none-elf-ld as its linker
   mipsel-none-elf-ld = writeShellScriptBin "mipsel-none-elf-ld" ''
-    exec ${pkgsCross.mipsel-linux-gnu.buildPackages.binutils}/bin/mipsel-unknown-linux-gnu-ld "$@"
+    exec ${mipselBinutils}/bin/mipsel-unknown-linux-gnu-ld "$@"
+  '';
+
+  # tools/dis.sh disassembles with `mipsel-objdump -m mips:5900`
+  mipsel-objdump = writeShellScriptBin "mipsel-objdump" ''
+    exec ${mipselBinutils}/bin/mipsel-unknown-linux-gnu-objdump "$@"
   '';
 
   resplice = (import (fetchTarball
     "https://github.com/cilki/nixpkgs/archive/refs/heads/resplice.tar.gz")
     { }).resplice;
+
+  # Ghidra extension adding the PS2's Emotion Engine (R5900 core: MMI, VU0
+  # macro mode, COP2, ...) as the language r5900:LE:32:default, plus a STABS
+  # analyzer for ELFs with .mdebug and a PCSX2 savestate importer. The upstream
+  # release ships one prebuilt zip per Ghidra version; the version in the file
+  # name must match nixpkgs' ghidra (currently 12.1.2) or Ghidra refuses to
+  # load it, so bump both together.
+  # https://github.com/chaoticgd/ghidra-emotionengine-reloaded
+  ghidra-emotionengine = stdenv.mkDerivation {
+    pname = "ghidra-emotionengine-reloaded";
+    version = "2.1.38";
+    src = fetchurl {
+      url =
+        "https://github.com/chaoticgd/ghidra-emotionengine-reloaded/releases/download/v2.1.38/ghidra_${ghidra.version}_PUBLIC_20261004_ghidra-emotionengine-reloaded.zip";
+      hash = "sha256-LmvdjtjnYrMCtH8M56D99Vtf561rBM/oz6B4qXWOZ64=";
+    };
+    nativeBuildInputs = [ unzip ];
+    dontUnpack = true;
+    # Same layout nixpkgs' buildGhidraExtension produces, so ghidra.withExtensions
+    # can symlink it into the install tree
+    installPhase = ''
+      mkdir -p $out/lib/ghidra/Ghidra/Extensions
+      unzip -q -d $out/lib/ghidra/Ghidra/Extensions $src
+      # Prevent attempted creation of plugin lock files in the Nix store
+      for i in $out/lib/ghidra/Ghidra/Extensions/*; do touch "$i/.dbDirLock"; done
+    '';
+  };
+
+  # Two views of the same thing, needed because REA and Ghidra each look for
+  # the extension differently (REA runs Ghidra headless with a throwaway user
+  # config dir, so ~/.config/ghidra extensions would never be seen):
+  #  - ghidraExtensions: extensions-only overlay (lib/ghidra/Ghidra/Extensions)
+  #    that Ghidra itself loads as an extra application root via NIX_GHIDRAHOME.
+  #    Ghidra locates its primary root through the real path of its jars, so
+  #    it does not see Extensions symlinked next to them.
+  #  - ghidraPs2: the full install plus the extension in one tree, for REA's
+  #    GHIDRA_INSTALL_DIR: it validates support/analyzeHeadless etc. there and
+  #    scans only <install>/Ghidra/{Processors,Extensions} for the .ldefs that
+  #    must declare REA_GHIDRA_LANGUAGE_ID.
+  ghidraExtensions = ghidra.withExtensions (_: [ ghidra-emotionengine ]);
+  ghidraPs2 = symlinkJoin {
+    name = "ghidra-ps2-${ghidra.version}";
+    paths = [ ghidra ghidra-emotionengine ];
+  };
 
   # cage must not bind its own socket next to the host's wayland-0 (bind()
   # fails with EADDRINUSE), so the container env gives everything cage's own
@@ -55,7 +106,7 @@ let
     ]);
 in mkShell rec {
   nativeBuildInputs =
-    [ pkg-config rustToolchain rust-analyzer mipsel-none-elf-ld ];
+    [ pkg-config rustToolchain rust-analyzer mipsel-none-elf-ld mipsel-objdump ];
   # cage runs PCSX2 in a nested wlroots compositor: to the host it's one
   # ordinary Wayland window, while its own socket (wayland-0 in /tmp/cagert)
   # gives the agent screencopy (grim) and virtual-keyboard (wtype) access
@@ -72,7 +123,29 @@ in mkShell rec {
     wtype
     # bridges PINE's unix socket to TCP for pcsx2-mcp
     socat
+    # Decompiler for the Reverse step, driven headless by REA (installed in the
+    # Dockerfile). REA requires the full JDK Ghidra was built against and a
+    # procps-compatible `ps` for its child-process ownership checks.
+    ghidraPs2
+    openjdk21
+    procps
   ];
+
+  # REA's Ghidra provider: https://github.com/morluto/rea/blob/main/docs/installation.md#ghidra
+  GHIDRA_INSTALL_DIR = "${ghidraPs2}/lib/ghidra";
+  # nixpkgs patches Ghidra to take an extra application root from this var.
+  # The wrappers in ${ghidraExtensions}/bin set it themselves, but REA starts
+  # the JVM directly from GHIDRA_INSTALL_DIR, so export it for everything.
+  NIX_GHIDRAHOME = "${ghidraExtensions}/lib/ghidra/Ghidra";
+  JAVA_HOME = openjdk21.home;
+  # Import PS2 ELFs as the Emotion Engine language rather than whatever the
+  # loader's opinion picks from the header (stock MIPS matches too). Note REA
+  # also screens the ELF header itself before Ghidra runs and rejects a PS2
+  # ELF's MIPS-III/5900/EABI64 flags; tools/rea_elf.py makes the copy it will
+  # accept.
+  REA_GHIDRA_LANGUAGE_ID = "r5900:LE:32:default";
+  REA_GHIDRA_COMPILER_SPEC_ID = "default";
+  REA_ANALYSIS_PROVIDER = "ghidra";
 
   # The container has no /etc/fonts; without this PCSX2's UI renders no text
   FONTCONFIG_FILE = makeFontsConf { fontDirectories = [ dejavu_fonts ]; };
