@@ -45,19 +45,22 @@ RUN printf '#!/bin/sh\nexec node /opt/rea/node_modules/rea-agents/scripts/rea.mj
     && chmod +x /usr/local/bin/rea
 
 # REA's own skill: generic guidance on driving its MCP tools (summary-first,
-# evidence IDs, close_binary). remaster-ps2 builds on it for the PS2 specifics
-RUN mkdir -p /root/.claude/skills \
+# evidence IDs, close_binary). remaster-ps2 builds on it for the PS2 specifics.
+# Skills live outside ~/.config/opencode, which the user mounts from the host
+# (see README), and are registered via skills.paths in the managed config
+RUN mkdir -p /opt/remaster/skills \
     && cp -r /opt/rea/node_modules/rea-agents/skills/reverse-engineer-anything \
-             /root/.claude/skills/
+             /opt/remaster/skills/
 
-# Register the pcsx2-mcp and rea servers via managed MCP config; this is
-# exclusive, so sessions in the container get only these servers. Never run
-# `rea setup` in the container - it would try to write ~/.claude.json instead
-COPY mcp.json /etc/claude-code/managed-mcp.json
+# Managed opencode config: highest precedence, so it overrides the mounted
+# user config for the model, permissions, skills path and the pcsx2-mcp/rea
+# MCP servers. Never run `rea setup` in the container - it would try to
+# rewrite the mounted host config instead
+COPY opencode.json /etc/opencode/opencode.json
 
 # Built-in skill; mipsel-ps2-elf.json is the custom rustc target for the
 # PS2's Emotion Engine, used by the skill's Fabricate step
-COPY SKILL.md mipsel-ps2-elf.json /root/.claude/skills/remaster-ps2/
+COPY SKILL.md mipsel-ps2-elf.json /opt/remaster/skills/remaster-ps2/
 
 # Skill helper tools, on PATH so the agent can invoke them by name (gsl.py
 # and scalers.py are modules imported by their neighbours, which locate them
@@ -84,10 +87,6 @@ ENV WAYLAND_DISPLAY=wayland-0
 ENV LANG=C.UTF-8
 RUN mkdir -m 700 -p /tmp/runtime /tmp/cagert
 
-# Claude Code refuses --dangerously-skip-permissions as root unless it
-# knows it's inside a sandboxed container
-ENV IS_SANDBOX=1
-
 # Pre-baked PCSX2 config: skips the first-run setup wizard (the BIOS lands at
 # the default path, so the wizard has nothing to configure), enables PINE, and
 # binds pad 1 to the keyboard — see PCSX2.base.ini itself. BIOS files must be
@@ -101,5 +100,7 @@ RUN mkdir -p /root/.config/PCSX2/inis /root/.config/PCSX2/bios \
     && nix-shell /opt/remaster/shell.nix --run \
        'pcsx2ini.py /opt/remaster/PCSX2.base.ini > /root/.config/PCSX2/inis/PCSX2.ini'
 
-# Launch claude in the foreground; the container is the permission boundary
-ENTRYPOINT ["nix-shell", "/opt/remaster/shell.nix", "--run", "claude --dangerously-skip-permissions"]
+# Launch opencode in the foreground; the container is the permission boundary
+# (the managed config allows every permission, overriding any "ask" rules in
+# the mounted user config)
+ENTRYPOINT ["nix-shell", "/opt/remaster/shell.nix", "--run", "opencode"]

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-opus-5-5",
+  "permission": {
+    "*": "allow",
+    "external_directory": "allow",
+    "doom_loop": "allow"
+  },
+  "skills": {
+    "paths": ["/opt/remaster/skills"]
+  },
+  "mcp": {
+    "pcsx2": {
+      "type": "local",
+      "command": ["pcsx2-mcp"]
+    },
+    "rea": {
+      "type": "local",
+      "command": ["rea", "mcp"],
+      "environment": {
+        "REA_MCP_INPUT_SCHEMA_PROFILE": "compact"
+      }
+    }
+  }
+}

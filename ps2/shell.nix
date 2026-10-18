@@ -112,7 +112,7 @@ in mkShell rec {
   # gives the agent screencopy (grim) and virtual-keyboard (wtype) access
   buildInputs = [
     pcsx2
-    claude-code
+    opencode
     p7zip
     ffmpeg
     mame-tools

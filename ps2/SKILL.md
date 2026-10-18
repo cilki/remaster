@@ -4,6 +4,8 @@ description:
   Remaster a PS2 game end-to-end - extract the ISO, reverse-engineer it with
   REA/Ghidra and the PCSX2 debugger, modify code and assets, repack a runnable
   ISO, and verify it in the emulator.
+metadata:
+  opencode/slash: "true"
 ---
 
 # REmaster skill
@@ -61,7 +63,7 @@ to the ELF.
 
 ```sh
 cargo build --release -Z build-std=core,alloc -Z json-target-spec \
-    --target /root/.claude/skills/remaster-ps2/mipsel-ps2-elf.json
+    --target /opt/remaster/skills/remaster-ps2/mipsel-ps2-elf.json
 ```
 
 ## Viewing and controlling the game
@@ -77,7 +79,7 @@ wrapper that connects itself out to the host display.
 # Launch PCSX2 in the background (or use launch.sh, see below):
 cage -- pcsx2-qt -batch -fullscreen /workspace/remaster.iso &
 
-# Screenshot what PCSX2 is rendering, then view the PNG with the Read tool:
+# Screenshot what PCSX2 is rendering, then view the PNG with the read tool:
 grim /tmp/screen.png
 
 # Send keys into PCSX2 (F8 = native PCSX2 screenshot hotkey):
@@ -258,8 +260,9 @@ rea xrefs /workspace/rea/SLUS_XXX.XX.rea.elf 0x2ed720 --format json
 ```
 
 Never run `rea setup`, `rea update` or `rea uninstall` here: the server is
-registered through the container's managed MCP config and those commands would
-try to rewrite `~/.claude.json`.
+registered through the container's managed opencode config
+(`/etc/opencode/opencode.json`) and those commands would try to rewrite the
+user's own opencode config, which is mounted from the host.
 
 ### Live debugging
 

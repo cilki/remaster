@@ -16,6 +16,9 @@ You need:
   containing them at `/root/.config/PCSX2/bios` — PCSX2 will not boot anything
   without them.
 - Wayland
+- An [opencode](https://opencode.ai) config at `~/.config/opencode` with
+  credentials for the `anthropic` provider. The image pins
+  `anthropic/claude-opus-5-5` as its model.
 
 ### Optional: check if your game includes debug symbols
 
@@ -34,13 +37,15 @@ docker run -it --rm \
   --shm-size=256m \
   -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:/tmp/runtime/wayland-0 \
   -v $PWD/ps2/game_dir:/workspace \
-  -v ~/.claude/.credentials.json:/root/.claude/.credentials.json \
-  -v ~/.claude.json:/root/.claude.json \
+  -v ~/.config/opencode:/root/.config/opencode \
   -v /path/to/your/bios:/root/.config/PCSX2/bios \
   remaster-ps2
 ```
 
-The container starts `claude` directly. Just invoke the `/remaster-ps2` skill to
+The container starts `opencode` directly. The image's managed config
+(`/etc/opencode/opencode.json`) takes precedence over your mounted config for
+the model, permissions (everything allowed; the container is the boundary), and
+the bundled MCP servers and skills. Just invoke the `/remaster-ps2` skill to
 get started. The agent will extract the ISO and begin reversing interesting
 parts of the game into a rust-based "shim". Finally it will add new content and
 enhance the existing assets. Progress is tracked in `README.md` so sessions can
